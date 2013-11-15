@@ -16,7 +16,7 @@ test/fixtures/%.html: test/fixtures/%
 clean:
 	@rm -rf node_modules
 	@rm -rf test/fixtures
-	@git checkout -- lib test/fixtures
+	@git checkout -- test/fixtures
 
 release:
 ifndef VERSION

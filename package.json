@@ -27,5 +27,8 @@
     "mocha": "1.8.x",
     "nock": "0.16.x",
     "should": "1.2.x"
+  },
+  "scripts": {
+    "prepublish": "make all"
   }
 }
