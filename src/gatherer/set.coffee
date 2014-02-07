@@ -87,16 +87,17 @@ extract = (html, name) ->
     switch key
       when 'Name'
         cards.push card unless card is null
-        [param] = /multiverseid=\d+/.exec $(second).find('a').attr('href')
+        result = /multiverseid=(\d+)/.exec $(second).find('a').attr('href')
         card =
+          id: result[1]
           name: val
           converted_mana_cost: 0
           supertypes: []
           types: []
           subtypes: []
           expansion: name
-          gatherer_url: "#{gatherer.origin}/Pages/Card/Details.aspx?#{param}"
-          image_url: "#{gatherer.origin}/Handlers/Image.ashx?#{param}&type=card"
+          gatherer_url: "#{gatherer.origin}/Pages/Card/Details.aspx?#{result[0]}"
+          image_url: "#{gatherer.origin}/Handlers/Image.ashx?#{result[0]}&type=card"
       when 'Cost:'
         # 1(G/W)(G/W) -> {1}{G/W}{G/W} | 11 -> {11}
         card.mana_cost = "{#{val.match(/// ./. | \d+ | [^()] ///g).join('}{')}}"

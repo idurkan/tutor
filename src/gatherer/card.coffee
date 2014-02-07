@@ -128,7 +128,9 @@ extract = (html, details) ->
 
   if verbose
     set 'image_url', "#{gatherer.origin}/Handlers/Image.ashx?type=card&multiverseid=#{details.id}"
-    set 'gatherer_url', "#{gatherer.origin}/Pages/Card/Details.aspx?multiverseid=#{details.id}"
+    # set 'gatherer_url', "#{gatherer.origin}/Pages/Card/Details.aspx?multiverseid=#{details.id}"
+    set 'gatherer_url', "foo"
+    set 'id', details.id
   else
     # encodeURIComponent notably misses single quote, which messes up cards like "Gideon's Lawkeeper"
     encodedName = encodeURIComponent(details.name).replace(/'/g, '%27')
