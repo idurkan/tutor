@@ -1,8 +1,11 @@
+import datetime
 import os
 import itertools
 import logging
 import json
+import pprint
 import subprocess
+import sys
 
 logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger()
@@ -13,7 +16,6 @@ TUTOR_PATH = os.path.join(TUTOR_DIR, "bin/tutor")
 
 def _query_tutor(command_parameters):
     """
-
     :param command_parameters:
     :return: the json-parsed output of the tutor command
     """
@@ -27,36 +29,79 @@ def _query_tutor(command_parameters):
                                             u' '.join(command))
 
 
-def _query_tutor_for_cards_by_set(set_name):
+def query_cards_in_set(set_name):
     """
-    :param set_name: the set's name, which will be passed to
-        tutor's command line
-    :return: a list of cards represented as dictionaries
+    :param set_name: the set's name, which will be passed to tutor's command line
+    :return: a list of cards represented as dictionaries in the given set.
     """
 
-    log.debug('searching for set name: %r', set_name)
-    return _query_tutor(['set', set_name])
+    print "Getting set \'" + set_name + "\'..."
+
+    start_time = get_time_now()
+    json_card_list = _query_tutor(['set', set_name])
+
+    set_cards = [_query_tutor(['card', card['id']]) for card in json_card_list]
+
+    end_time = get_time_now()
+
+    print('Finished getting set \'{0}\' of {1} cards; set elapsed time: {2}'.format(
+        set_name, len(set_cards), str(end_time - start_time)))
+
+    return set_cards
 
 
-def _query_tutor_for_all_sets():
+def query_all_sets():
+    """
+    :return: list of all sets reported by Gatherer.
+    """
     log.debug('searching for sets')
     return _query_tutor(['sets'])
 
 
-def write_all_cards_from_gatherer_to_file():
+def write_cards_from_sets_to_file(target_sets):
     """
-    :return: a dictionary mapping card names to the card's dictionary representation
+    :return: a dictionary mapping card IDs to the card's dictionary representation
     """
-    all_sets = _query_tutor_for_all_sets()
     cards = {
-        card['name']: card
-        # for card in itertools.chain(*[_query_tutor_for_cards_by_set("Lorwyn")])
-        for card in itertools.chain(*[_query_tutor_for_cards_by_set(set_name)
-                                      for set_name in all_sets])
+        card['id']: card
+        for card in itertools.chain(*[query_cards_in_set(set_name)
+                                      for set_name in target_sets])
     }
 
     json.dump(cards, open('cards.json', 'wb'), indent=4, sort_keys=True, separators=(',', ': '))
 
-if __name__ == '__main__':
+def check_specified_sets_exist(all_sets, spec_sets):
+    for spec_set in spec_sets:
+        if not spec_set in all_sets:
+            return False
 
-    write_all_cards_from_gatherer_to_file()
+    return True
+
+def get_time_now():
+    return datetime.datetime.now().replace(microsecond=0)
+
+def main(args):
+    all_sets = query_all_sets()
+
+    query_sets = args
+
+    if not check_specified_sets_exist(all_sets, query_sets):
+        print("Some of the sets you specified don't exist.  Doublecheck your arguments.")
+        exit(1)
+
+    if len(args) == 0:
+        query_sets = all_sets
+
+    start_time = get_time_now()
+    print('Started scrape at: ' + str(start_time))
+
+    write_cards_from_sets_to_file(query_sets)
+
+    end_time = get_time_now()
+    print('***************************************************')
+    print('Finished scrape at: ' + str(end_time))
+    print('Total elapsed time: ' + str(end_time - start_time))
+    print('***************************************************')
+
+if __name__ == '__main__':
+    main(sys.argv[1:])
