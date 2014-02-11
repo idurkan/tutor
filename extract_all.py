@@ -3,9 +3,10 @@ import os
 import itertools
 import logging
 import json
-import pprint
+import re
 import subprocess
 import sys
+import traceback
 
 logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger()
@@ -21,6 +22,8 @@ def _query_tutor(command_parameters):
     """
 
     command = [TUTOR_PATH, '--format', 'json'] + command_parameters
+
+    # print "Command", command
 
     try:
         return json.loads(subprocess.check_output(command).strip())
@@ -57,18 +60,91 @@ def query_all_sets():
     log.debug('searching for sets')
     return _query_tutor(['sets'])
 
-
 def write_cards_from_sets_to_file(target_sets):
     """
     :return: a dictionary mapping card IDs to the card's dictionary representation
     """
-    cards = {
-        card['id']: card
-        for card in itertools.chain(*[query_cards_in_set(set_name)
-                                      for set_name in target_sets])
+    all_cards_dict = {}
+    all_errored_cards = []
+
+    for set_name in target_sets:
+        set_cards = query_cards_in_set(set_name)
+        set_id_dict = {}
+
+        (set_id_dict, errored_cards) = card_postprocessing(set_cards)
+        all_errored_cards.extend(errored_cards)
+
+        all_cards_dict.update(set_id_dict)
+
+    json.dump(all_cards_dict, open('cards.json', 'wb'), indent=4, sort_keys=True, separators=(',', ': '))
+
+    return all_errored_cards
+
+url_breaker = re.compile(r"(.*)=(\d+$)")
+
+def card_postprocessing(set_cards):
+    errored_cards = []
+    set_id_dict = {}
+    set_collector_num_dict = {}
+    set_land_count = {
+        'Plains': 0,
+        'Island': 0,
+        'Swamp': 0,
+        'Forest': 0,
+        'Mountain': 0
     }
 
-    json.dump(cards, open('cards.json', 'wb'), indent=4, sort_keys=True, separators=(',', ': '))
+    for card in set_cards:
+        cardname = card['name']
+        card['special_card'] = 'normal'
+
+        # leaving out basic lands; most basic lands have several art variations with different IDs
+        # (and thus different image and gatherer URLs).  I can't figure out how to get Tutor to report these
+        # other art variations' IDs.  it *does* report a card for each variation, but the IDs are all identical.
+        if card['rarity'] != 'Basic Land':
+            try:
+                # early sets don't have reported collector numbers...
+                if 'number' in card:
+                    cleaned_number = clean_ab(str(card['number']))
+
+                    # hack note 1:
+                    # split cards and flip cards are reported twice with the same id by Tutor.
+                    # the full English 'X // Y' name may be found in the nonenglish card names for nearly every set.
+                    # Almost every split card has a German "translation", and it's in *English*.
+                    if card['id'] in set_id_dict:
+                        card['special_card'] = 'split-or-flip'
+                        card['name'] = card['languages']['de']['name']
+                    # hack note 2:
+                    # each face of double-face cards (like werewolves) are reported with separate IDs, but
+                    # they have the same collector number with a or b appended... note the card's double-faced
+                    # plus the ID of its companion.  let's record that the two IDs are related.
+                    elif cleaned_number in set_collector_num_dict:
+                        card['special_card'] = 'double-face'
+                        companion_card = set_collector_num_dict[cleaned_number]
+                        card['companion_id'] = companion_card['id']
+                        companion_card['companion_id'] = card['id']
+                        companion_card['special_card'] = 'double-face'
+
+                    set_collector_num_dict[cleaned_number] = card
+
+            except KeyError as ke:
+                print 'KeyError in special_card_processing: {0}'.format(str(ke))
+                print 'Error was on card: {0} with id {1}'.format(card['name'], card['id'])
+                print traceback.format_exc()
+                errored_cards.append(card)
+            
+            set_id_dict[card['id']] = card
+
+    return (set_id_dict, errored_cards)
+
+def ends_with_ab(number_string):
+    last_char = number_string[-1:]
+    return last_char == 'a' or last_char == 'b'
+
+def clean_ab(number_string):
+    if ends_with_ab(number_string):
+        return number_string[0:-1]
+    return number_string
 
 def check_specified_sets_exist(all_sets, spec_sets):
     for spec_set in spec_sets:
@@ -76,9 +152,6 @@ def check_specified_sets_exist(all_sets, spec_sets):
             return False
 
     return True
-
-def get_time_now():
-    return datetime.datetime.now().replace(microsecond=0)
 
 def main(args):
     all_sets = query_all_sets()
@@ -95,13 +168,25 @@ def main(args):
     start_time = get_time_now()
     print('Started scrape at: ' + str(start_time))
 
-    write_cards_from_sets_to_file(query_sets)
+    errored_cards = write_cards_from_sets_to_file(query_sets)
 
     end_time = get_time_now()
     print('***************************************************')
     print('Finished scrape at: ' + str(end_time))
     print('Total elapsed time: ' + str(end_time - start_time))
     print('***************************************************')
+
+    print_errored_cards(errored_cards)
+
+def get_time_now():
+    return datetime.datetime.now().replace(microsecond=0)
+
+def print_errored_cards(errored_cards):
+    if len(errored_cards) > 0:
+        print "The following cards had processing errors: "
+        errored_cards.sort(key=lambda card: card['id'])
+        for card in errored_cards:
+            print("id = {0:8}; name = {1}".format(card['id'], card['name']))
 
 if __name__ == '__main__':
     main(sys.argv[1:])
